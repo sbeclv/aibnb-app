@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useState, useEffect, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { createClient } from "@supabase/supabase-js";
 
@@ -31,11 +31,6 @@ function AppProvider({ children }) {
   const [users, setUsers] = useState({});
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadUsers();
-    subscribeToChanges();
-  }, []);
 
   const loadUsers = async () => {
     try {
@@ -81,6 +76,14 @@ function AppProvider({ children }) {
       .subscribe();
   };
 
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  useEffect(() => {
+    subscribeToChanges();
+  }, []);
+
   return (
     <AppContext.Provider value={{ users, setUsers, session, setSession, loading, loadUsers }}>
       {children}
@@ -95,10 +98,6 @@ function useApp() {
 // ── UTILITIES ─────────────────────────────────────────────────────────────────
 const fmtDate = d => new Date(d).toLocaleDateString("es", { day:"numeric", month:"short", year:"numeric" });
 const daysLeft = (a,b) => Math.max(0, Math.ceil((new Date(b)-new Date(a))/86400000));
-const fmtNumber = (num, locale = "en-US") => {
-  if (!num && num !== 0) return "0";
-  return parseFloat(num).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
 
 const Logo = ({ size=34 }) => (
   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -130,7 +129,7 @@ const StatusBadge = ({ type }) => {
 // ── LOGIN PAGE ────────────────────────────────────────────────────────────────
 function LoginPage() {
   const nav = useNavigate();
-  const { users, session, setSession } = useApp();
+  const { users, setSession } = useApp();
   const [wpp, setWpp] = useState("");
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
@@ -386,7 +385,7 @@ function UserDashboard({ user }) {
 
 // ── ADMIN DASHBOARD ───────────────────────────────────────────────────────────
 function AdminDashboard() {
-  const { users, setUsers, setSession, loadUsers } = useApp();
+  const { users, setSession, loadUsers } = useApp();
   const nav = useNavigate();
   const [showModal, setShowModal] = useState(false);
   const [editWpp, setEditWpp] = useState(null);
