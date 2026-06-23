@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from "react";
+import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { createClient } from "@supabase/supabase-js";
 
@@ -32,7 +32,7 @@ function AppProvider({ children }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       const { data, error } = await supabase.from("users").select("*");
       if (error) throw error;
@@ -65,24 +65,22 @@ function AppProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const subscribeToChanges = () => {
-    supabase
+  useEffect(() => {
+    loadUsers();
+
+    const channel = supabase
       .channel("users")
       .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
         loadUsers();
       })
       .subscribe();
-  };
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
-  useEffect(() => {
-    subscribeToChanges();
-  }, []);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadUsers]);
 
   return (
     <AppContext.Provider value={{ users, setUsers, session, setSession, loading, loadUsers }}>
@@ -185,23 +183,23 @@ function UserDashboard({ user }) {
   const today=new Date().toISOString().split('T')[0];
   const dl=daysLeft(today,user.end);
   const dt=daysLeft(user.start,user.end);
-  const progress=Math.min(100,Math.round(((dt-dl)/dt)*100));
+  const progress=dt > 0 ? Math.min(100,Math.max(0,Math.round(((dt-dl)/dt)*100))) : 0;
   const planColor=user.plan==="Anual"?C.gold:user.plan==="Pro"?C.primary:C.muted;
   const { setSession } = useApp();
   const nav = useNavigate();
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState([]);
 
-  const loadLogs = async () => {
-    try {
-      const { data } = await supabase.from("user_logs").select("*").order("created_at", { ascending: false }).limit(10);
-      setLogs(data || []);
-    } catch (err) {
-      console.error("Error cargando logs:", err);
-    }
-  };
-
   useEffect(() => {
+    const loadLogs = async () => {
+      try {
+        const { data } = await supabase.from("user_logs").select("*").order("created_at", { ascending: false }).limit(10);
+        setLogs(data || []);
+      } catch (err) {
+        console.error("Error cargando logs:", err);
+      }
+    };
+
     if (showLogs) loadLogs();
   }, [showLogs]);
 
@@ -708,7 +706,18 @@ function AppPage() {
   }
 
   if (session.role === "user") {
-    return <UserDashboard user={users[session.wpp]} />;
+    const user = users[session.wpp];
+
+    if (!user) {
+      return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontFamily:"'Inter',sans-serif" }}>
+        <div style={{ textAlign:"center" }}>
+          <p>No encontramos tu usuario. Vuelve a iniciar sesión.</p>
+          <button onClick={() => nav("/login")} style={{ marginTop:16, padding:"10px 20px", background:C.primary, color:"#fff", border:"none", borderRadius:8, cursor:"pointer" }}>Ir a Login</button>
+        </div>
+      </div>;
+    }
+
+    return <UserDashboard user={user} />;
   }
 
   return null;
