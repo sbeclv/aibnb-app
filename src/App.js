@@ -36,14 +36,26 @@ const DEFAULT_FORM = {
   start_date: "",
   end_date: "",
   plan_value: "14.99",
+  renewal_plan: "Pro",
   airbnb_link: "",
   country: "USD",
   meet_enabled: true,
   precio_base: "",
   precio_base_fds: "",
+  descuento_1: "",
+  descuento_2: "",
   estrategia: "",
   estado_precios: "CRITICO",
 };
+
+const PLAN_OPTIONS = ["Manual", "Pro", "Anual"];
+
+const RENEWAL_PLAN_OPTIONS = [
+  { value: "Manual", label: "🛠️ Manual" },
+  { value: "Pro", label: "🚀 Pro" },
+  { value: "Anual", label: "🏆 Anual" },
+  { value: "Personalizado", label: "⚙️ Personalizado" },
+];
 
 const MONEY_OPTIONS = [
   { value: "USD", label: "USD - Dolares" },
@@ -56,12 +68,12 @@ const MONEY_OPTIONS = [
 ];
 
 const PRICE_STATUS_OPTIONS = [
-  { value: "CRITICO", label: "Critico" },
-  { value: "ESTABLE", label: "Estable" },
-  { value: "MEJORAR FOTOS", label: "Mejorar fotos" },
-  { value: "IDEAL", label: "Ideal" },
-  { value: "ACTIVACION", label: "Activacion" },
-  { value: "PERSONALIZADO", label: "Personalizado" },
+  { value: "CRITICO", label: "🔴 Critico" },
+  { value: "ESTABLE", label: "🟡 Estable" },
+  { value: "MEJORAR FOTOS", label: "📸 Mejorar fotos" },
+  { value: "IDEAL", label: "🟢 Ideal" },
+  { value: "ACTIVACION", label: "⚡ Activacion" },
+  { value: "PERSONALIZADO", label: "⚙️ Personalizado" },
 ];
 
 // ── CONTEXT GLOBAL ────────────────────────────────────────────────────────────
@@ -110,6 +122,7 @@ function AppProvider({ children }) {
           end: u.end_date,
           listings: [],
           renewal: u.renewal,
+          renewal_plan: u.renewal_plan || u.plan,
           city: u.city,
           meetEnabled: u.meet_enabled,
           correo: u.correo,
@@ -117,6 +130,8 @@ function AppProvider({ children }) {
           airbnb_link: u.airbnb_link,
           precio_base: u.precio_base,
           precio_base_fds: u.precio_base_fds,
+          descuento_1: u.descuento_1,
+          descuento_2: u.descuento_2,
           estrategia: u.estrategia,
           estado_precios: u.estado_precios,
         };
@@ -164,6 +179,16 @@ const daysToNextMeetReset = () => {
   const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return Math.max(0, Math.ceil((next - now) / 86400000));
 };
+const formatMoney = (value, currency = "USD") => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return `${currency} $0.00`;
+  return `${currency} ${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+const getPriceStatusLabel = value => PRICE_STATUS_OPTIONS.find(option => option.value === value)?.label || "⚙️ Personalizado";
+const parseAirbnbLinks = value => String(value || "")
+  .split(/\n|,/)
+  .map(link => link.trim())
+  .filter(Boolean);
 
 const Logo = ({ size=34 }) => (
   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -253,6 +278,7 @@ function UserDashboard({ user }) {
   const dt=daysLeft(user.start,user.end);
   const progress=dt > 0 ? Math.min(100,Math.max(0,Math.round(((dt-dl)/dt)*100))) : 0;
   const planColor=user.plan==="Anual"?C.gold:user.plan==="Pro"?C.primary:C.muted;
+  const airbnbLinks = parseAirbnbLinks(user.airbnb_link);
   const { setSession, loadUsers, lastRefresh } = useApp();
   const nav = useNavigate();
   const [showLogs, setShowLogs] = useState(false);
@@ -309,7 +335,7 @@ function UserDashboard({ user }) {
             <div style={{ fontSize:10, color:C.muted, fontWeight:700, letterSpacing:"0.8px", textTransform:"uppercase", marginBottom:10 }}>Suscripción</div>
             <StatusBadge type={user.status}/>
             <div style={{ marginTop:12, fontSize:20, fontWeight:900, color:planColor }}>Plan {user.plan}</div>
-            {user.renewal&&user.status==="active"&&<div style={{ marginTop:10, fontSize:11, color:C.muted, background:C.bg, borderRadius:8, padding:"7px 10px", lineHeight:1.5 }}>Renovación:<br/><strong style={{color:C.text}}>{user.country || "USD"} ${Number(user.renewal).toFixed(2)}/mes</strong></div>}
+            {user.renewal&&user.status==="active"&&<div style={{ marginTop:10, fontSize:11, color:C.muted, background:C.bg, borderRadius:8, padding:"7px 10px", lineHeight:1.5 }}>🔁 Renovación:<br/><strong style={{color:C.text}}>Plan {user.renewal_plan || user.plan} · {formatMoney(user.renewal, user.country || "USD")}/mes</strong></div>}
           </div>
           <div style={{ background:C.white, border:"1px solid "+(user.op==="done"?C.greenBorder:user.op==="progress"?C.yellowBorder:C.border), borderRadius:16, padding:"20px 18px", boxShadow:C.shadow }}>
             <div style={{ fontSize:10, color:C.muted, fontWeight:700, letterSpacing:"0.8px", textTransform:"uppercase", marginBottom:10 }}>Optimización</div>
@@ -347,22 +373,22 @@ function UserDashboard({ user }) {
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
             <div style={{ background:C.bg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.border }}>
               <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>VALOR PLAN</div>
-              <div style={{ fontSize:16, fontWeight:900, color:C.primary }}>{user.country || "USD"} ${user.renewal ? Number(user.renewal).toFixed(2) : "0.00"}</div>
+              <div style={{ fontSize:16, fontWeight:900, color:C.primary }}>{formatMoney(user.renewal, user.country || "USD")}</div>
             </div>
             <div style={{ background:C.bg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.border }}>
-              <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>PAÍS / MONEDA</div>
-              <div style={{ fontSize:14, fontWeight:900, color:C.text }}>{user.country || "USD"}</div>
+              <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>PLAN RENOVACIÓN</div>
+              <div style={{ fontSize:14, fontWeight:900, color:C.text }}>{RENEWAL_PLAN_OPTIONS.find(option => option.value === (user.renewal_plan || user.plan))?.label || user.renewal_plan || user.plan}</div>
             </div>
-            {user.airbnb_link && (
+            {airbnbLinks.length > 0 && (
               <div style={{ gridColumn:"1 / -1", background:C.primaryGlow, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.primary+"40" }}>
-                <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>TU ANUNCIO AIRBNB</div>
-                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <a href={user.airbnb_link} target="_blank" rel="noreferrer" style={{ fontSize:13, fontWeight:700, color:C.primary, textDecoration:"none", display:"inline-flex", alignItems:"center", gap:4, flex:1 }}>
-                    🏠 {user.airbnb_link.substring(0,35)}...
-                  </a>
-                  <a href={user.airbnb_link} target="_blank" rel="noreferrer" style={{ background:C.primary, color:"#fff", padding:"5px 12px", borderRadius:6, fontWeight:600, fontSize:11, textDecoration:"none" }}>
-                    Ir →
-                  </a>
+                <div style={{ fontSize:9, color:C.muted, marginBottom:8, fontWeight:600 }}>🏠 TUS ANUNCIOS AIRBNB</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {airbnbLinks.map((link, index) => (
+                    <div key={link + index} style={{ display:"flex", alignItems:"center", gap:8, background:C.white, border:"1px solid "+C.border, borderRadius:8, padding:"8px 10px" }}>
+                      <div style={{ fontSize:12, fontWeight:800, color:C.text, flex:1 }}>Anuncio {index + 1}</div>
+                      <a href={link} target="_blank" rel="noreferrer" style={{ background:C.primary, color:"#fff", padding:"5px 12px", borderRadius:6, fontWeight:600, fontSize:11, textDecoration:"none" }}>Ir →</a>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -377,13 +403,25 @@ function UserDashboard({ user }) {
               {user.precio_base && (
                 <div style={{ background:C.bg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.border }}>
                   <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>PRECIO BASE</div>
-                <div style={{ fontSize:16, fontWeight:900, color:C.green }}>{user.country || "USD"} ${parseFloat(user.precio_base).toFixed(2)}</div>
+                <div style={{ fontSize:16, fontWeight:900, color:C.green }}>{formatMoney(user.precio_base, user.country || "USD")}</div>
                 </div>
               )}
               {user.precio_base_fds && (
                 <div style={{ background:C.bg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.border }}>
                   <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>PRECIO FDS</div>
-                  <div style={{ fontSize:16, fontWeight:900, color:C.gold }}>{user.country || "USD"} ${parseFloat(user.precio_base_fds).toFixed(2)}</div>
+                  <div style={{ fontSize:16, fontWeight:900, color:C.gold }}>{formatMoney(user.precio_base_fds, user.country || "USD")}</div>
+                </div>
+              )}
+              {user.descuento_1 && (
+                <div style={{ background:C.greenBg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.greenBorder }}>
+                  <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>DESCUENTO 1</div>
+                  <div style={{ fontSize:16, fontWeight:900, color:C.green }}>{formatMoney(user.descuento_1, user.country || "USD")}</div>
+                </div>
+              )}
+              {user.descuento_2 && (
+                <div style={{ background:C.greenBg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.greenBorder }}>
+                  <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>DESCUENTO 2</div>
+                  <div style={{ fontSize:16, fontWeight:900, color:C.green }}>{formatMoney(user.descuento_2, user.country || "USD")}</div>
                 </div>
               )}
             </div>
@@ -397,12 +435,7 @@ function UserDashboard({ user }) {
               <div style={{ background:C.bg, borderRadius:10, padding:"10px 12px", textAlign:"center", border:"1px solid "+C.border }}>
                 <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>ESTADO</div>
                 <div style={{ fontSize:13, fontWeight:700, color:C.text }}>
-                  {user.estado_precios === "CRITICO" && "🔴 CRÍTICO"}
-                  {user.estado_precios === "ESTABLE" && "🟡 ESTABLE"}
-                  {user.estado_precios === "MEJORAR FOTOS" && "📸 MEJORAR FOTOS"}
-                  {user.estado_precios === "IDEAL" && "🟢 IDEAL"}
-                  {user.estado_precios === "ACTIVACION" && "⚡ ACTIVACIÓN"}
-                  {user.estado_precios === "PERSONALIZADO" && "⚙️ PERSONALIZADO"}
+                  {getPriceStatusLabel(user.estado_precios)}
                 </div>
               </div>
             )}
@@ -411,11 +444,6 @@ function UserDashboard({ user }) {
 
         {/* ACCIONES */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }} className="ud-g2">
-          {user.airbnb_link && (
-            <a href={user.airbnb_link} target="_blank" rel="noreferrer" style={{ background:C.white, color:C.primary, border:"1px solid "+C.primary+"40", borderRadius:12, padding:"14px 18px", fontWeight:700, fontSize:13, cursor:"pointer", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", gap:8, boxShadow:C.shadow }}>
-              Ver anuncio Airbnb
-            </a>
-          )}
           {user.meetEnabled && (
             <a href={CALENDAR_URL_SINGLE} target="_blank" rel="noreferrer" style={{ background:"linear-gradient(135deg,#3B82F6,#2563EB)", color:"#fff", border:"none", borderRadius:12, padding:"14px 18px", fontWeight:700, fontSize:13, cursor:"pointer", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", gap:8, boxShadow:"0 4px 12px #3B82F640" }}>
               📅 Agendar meet
@@ -506,11 +534,14 @@ function AdminDashboard() {
       end_date: form.end_date || endStr,
       renewal: planValue,
       plan_value: planValue,
+      renewal_plan: form.renewal_plan || form.plan,
       airbnb_link: form.airbnb_link.trim(),
       country: form.country || "USD",
       meet_enabled: !!form.meet_enabled,
       precio_base: form.precio_base === "" ? null : parseFloat(form.precio_base),
       precio_base_fds: form.precio_base_fds === "" ? null : parseFloat(form.precio_base_fds),
+      descuento_1: form.descuento_1 === "" ? null : parseFloat(form.descuento_1),
+      descuento_2: form.descuento_2 === "" ? null : parseFloat(form.descuento_2),
       estrategia: form.estrategia.trim(),
       estado_precios: form.estado_precios || "CRITICO",
     };
@@ -552,11 +583,14 @@ function AdminDashboard() {
       start_date: user.start || "",
       end_date: user.end || "",
       plan_value: user.renewal ?? "",
+      renewal_plan: user.renewal_plan || user.plan || "Pro",
       airbnb_link: user.airbnb_link || "",
       country: user.country || "USD",
       meet_enabled: user.meetEnabled !== false,
       precio_base: user.precio_base || "",
       precio_base_fds: user.precio_base_fds || "",
+      descuento_1: user.descuento_1 || "",
+      descuento_2: user.descuento_2 || "",
       estrategia: user.estrategia || "",
       estado_precios: user.estado_precios || "CRITICO",
     });
@@ -670,9 +704,7 @@ function AdminDashboard() {
               <div>
                 <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>PLAN</label>
                 <select value={form.plan} onChange={e => setForm(p => ({...p, plan:e.target.value}))} style={inp}>
-                  <option>Manual</option>
-                  <option>Pro</option>
-                  <option>Anual</option>
+                  {PLAN_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
                 </select>
               </div>
               <div>
@@ -699,12 +731,22 @@ function AdminDashboard() {
                 <input type="date" value={form.end_date} onChange={e => setForm(p => ({...p, end_date:e.target.value}))} style={inp}/>
               </div>
               <div>
-                <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>VALOR PLAN (USD)</label>
+                <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>VALOR RENOVACIÓN</label>
                 <input type="number" placeholder="14.99" value={form.plan_value} onChange={e => setForm(p => ({...p, plan_value:e.target.value}))} style={inp}/>
               </div>
               <div>
-                <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>LINK AIRBNB</label>
-                <input type="url" placeholder="https://airbnb.com/rooms/..." value={form.airbnb_link} onChange={e => setForm(p => ({...p, airbnb_link:e.target.value}))} style={inp}/>
+                <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>PLAN DE RENOVACIÓN</label>
+                <select value={form.renewal_plan} onChange={e => setForm(p => ({...p, renewal_plan:e.target.value}))} style={inp}>
+                  {RENEWAL_PLAN_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5, gap:8 }}>
+                  <label style={{ fontSize:11, color:C.muted, display:"block", fontWeight:700 }}>ANUNCIOS AIRBNB</label>
+                  <button type="button" onClick={() => setForm(p => ({...p, airbnb_link:p.airbnb_link ? p.airbnb_link + "\n" : ""}))} style={{ background:C.primaryGlow, border:"1px solid "+C.primary+"40", borderRadius:6, padding:"4px 9px", color:C.primary, fontWeight:800, fontSize:10, cursor:"pointer" }}>+ Add</button>
+                </div>
+                <textarea placeholder={"https://airbnb.com/rooms/...\nhttps://airbnb.com/rooms/..."} value={form.airbnb_link} onChange={e => setForm(p => ({...p, airbnb_link:e.target.value}))} rows={3} style={{ ...inp, resize:"vertical", lineHeight:1.4 }}/>
+                <div style={{ fontSize:10, color:C.muted, marginTop:5 }}>Un link por línea. El usuario verá una lista con botón Ir.</div>
               </div>
               <div>
                 <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>PAÍS / MONEDA</label>
@@ -723,6 +765,14 @@ function AdminDashboard() {
                   <div>
                     <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>PRECIO BASE FDS</label>
                     <input type="number" placeholder="74.99" value={form.precio_base_fds} onChange={e => setForm(p => ({...p, precio_base_fds:e.target.value}))} style={inp}/>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>DESCUENTO 1</label>
+                    <input type="number" placeholder="10.00" value={form.descuento_1} onChange={e => setForm(p => ({...p, descuento_1:e.target.value}))} style={inp}/>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>DESCUENTO 2</label>
+                    <input type="number" placeholder="20.00" value={form.descuento_2} onChange={e => setForm(p => ({...p, descuento_2:e.target.value}))} style={inp}/>
                   </div>
                   <div>
                     <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>ESTRATEGIA</label>
