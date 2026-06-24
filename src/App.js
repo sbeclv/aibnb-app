@@ -24,6 +24,46 @@ const CALENDAR_URL_SINGLE = "https://api.leadconnectorhq.com/widget/booking/ruC0
 
 const ADMIN = { wpp: "+88888888", pass: "8888" };
 
+const DEFAULT_FORM = {
+  wpp: "",
+  pass: "",
+  nombre: "",
+  correo: "",
+  ciudad: "",
+  plan: "Pro",
+  status: "active",
+  op: "pending",
+  start_date: "",
+  end_date: "",
+  plan_value: "14.99",
+  airbnb_link: "",
+  country: "USD",
+  meet_enabled: true,
+  precio_base: "",
+  precio_base_fds: "",
+  estrategia: "",
+  estado_precios: "CRITICO",
+};
+
+const MONEY_OPTIONS = [
+  { value: "USD", label: "USD - Dolares" },
+  { value: "GTQ", label: "GTQ - Quetzal" },
+  { value: "MXN", label: "MXN - Pesos mexicanos" },
+  { value: "COP", label: "COP - Pesos colombianos" },
+  { value: "BRL", label: "BRL - Real brasileno" },
+  { value: "ARS", label: "ARS - Pesos argentinos" },
+  { value: "CLP", label: "CLP - Pesos chilenos" },
+];
+
+const PRICE_STATUS_OPTIONS = [
+  { value: "CRITICO", label: "Critico" },
+  { value: "ESTABLE", label: "Estable" },
+  { value: "MEJORAR FOTOS", label: "Mejorar fotos" },
+  { value: "IDEAL", label: "Ideal" },
+  { value: "ACTIVACION", label: "Activacion" },
+  { value: "PERSONALIZADO", label: "Personalizado" },
+];
+
 // ── CONTEXT GLOBAL ────────────────────────────────────────────────────────────
 const AppContext = createContext();
 
@@ -31,9 +71,31 @@ function AppProvider({ children }) {
   const [users, setUsers] = useState({});
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState(null);
+
+  const resetMonthlyMeet = useCallback(async () => {
+    const now = new Date();
+    if (now.getDate() !== 1) return;
+
+    const resetKey = `meet-reset-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    if (localStorage.getItem(resetKey)) return;
+
+    const { error } = await supabase
+      .from("users")
+      .update({ meet_enabled: true })
+      .eq("meet_enabled", false);
+
+    if (error) {
+      console.error("Error reiniciando meet mensual:", error);
+      return;
+    }
+
+    localStorage.setItem(resetKey, "done");
+  }, []);
 
   const loadUsers = useCallback(async () => {
     try {
+      await resetMonthlyMeet();
       const { data, error } = await supabase.from("users").select("*");
       if (error) throw error;
       const usersObj = {};
@@ -60,12 +122,13 @@ function AppProvider({ children }) {
         };
       });
       setUsers(usersObj);
+      setLastRefresh(new Date());
     } catch (err) {
       console.error("Error loading users:", err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [resetMonthlyMeet]);
 
   useEffect(() => {
     loadUsers();
@@ -83,7 +146,7 @@ function AppProvider({ children }) {
   }, [loadUsers]);
 
   return (
-    <AppContext.Provider value={{ users, setUsers, session, setSession, loading, loadUsers }}>
+    <AppContext.Provider value={{ users, setUsers, session, setSession, loading, loadUsers, lastRefresh }}>
       {children}
     </AppContext.Provider>
   );
@@ -96,6 +159,11 @@ function useApp() {
 // ── UTILITIES ─────────────────────────────────────────────────────────────────
 const fmtDate = d => new Date(d).toLocaleDateString("es", { day:"numeric", month:"short", year:"numeric" });
 const daysLeft = (a,b) => Math.max(0, Math.ceil((new Date(b)-new Date(a))/86400000));
+const daysToNextMeetReset = () => {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return Math.max(0, Math.ceil((next - now) / 86400000));
+};
 
 const Logo = ({ size=34 }) => (
   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -185,10 +253,17 @@ function UserDashboard({ user }) {
   const dt=daysLeft(user.start,user.end);
   const progress=dt > 0 ? Math.min(100,Math.max(0,Math.round(((dt-dl)/dt)*100))) : 0;
   const planColor=user.plan==="Anual"?C.gold:user.plan==="Pro"?C.primary:C.muted;
-  const { setSession } = useApp();
+  const { setSession, loadUsers, lastRefresh } = useApp();
   const nav = useNavigate();
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadUsers();
+    setRefreshing(false);
+  };
 
   useEffect(() => {
     const loadLogs = async () => {
@@ -208,7 +283,8 @@ function UserDashboard({ user }) {
       <nav style={{ borderBottom:"1px solid "+C.border, padding:"13px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", background:C.white, position:"sticky", top:0, zIndex:100, boxShadow:C.shadow }}>
         <Logo size={28}/>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ width:32, height:32, borderRadius:"50%", background:"linear-gradient(135deg,"+C.primaryLight+","+C.primary+")", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:13, color:"#fff" }}>{user.name.charAt(0)}</div>
+          <button onClick={handleRefresh} disabled={refreshing} style={{ background:C.primaryGlow, border:"1px solid "+C.primary+"40", borderRadius:8, padding:"6px 12px", color:C.primary, fontSize:12, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>{refreshing ? "Actualizando..." : "Refrescar"}</button>
+          <div style={{ width:32, height:32, borderRadius:"50%", background:"linear-gradient(135deg,"+C.primaryLight+","+C.primary+")", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:13, color:"#fff" }}>{(user.name || "?").charAt(0)}</div>
           <button onClick={()=>{setSession(null);nav("/login");}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:8, padding:"6px 12px", color:C.muted, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>Salir</button>
         </div>
       </nav>
@@ -223,8 +299,8 @@ function UserDashboard({ user }) {
           </div>
         )}
         <div style={{ marginBottom:22 }}>
-          <h1 style={{ fontSize:"clamp(18px,3vw,24px)", fontWeight:900, margin:"0 0 4px" }}>Hola, {user.name.split(" ")[0]} 👋</h1>
-          <p style={{ color:C.muted, fontSize:13, margin:0 }}>{user.city} · Plan <span style={{ color:planColor, fontWeight:700 }}>{user.plan}</span></p>
+          <h1 style={{ fontSize:"clamp(18px,3vw,24px)", fontWeight:900, margin:"0 0 4px" }}>Hola, {(user.name || "usuario").split(" ")[0]} 👋</h1>
+          <p style={{ color:C.muted, fontSize:13, margin:0 }}>{user.city} · Plan <span style={{ color:planColor, fontWeight:700 }}>{user.plan}</span>{lastRefresh ? " · Actualizado " + lastRefresh.toLocaleTimeString("es", { hour:"2-digit", minute:"2-digit" }) : ""}</p>
         </div>
 
         {/* CARDS PRINCIPALES */}
@@ -233,7 +309,7 @@ function UserDashboard({ user }) {
             <div style={{ fontSize:10, color:C.muted, fontWeight:700, letterSpacing:"0.8px", textTransform:"uppercase", marginBottom:10 }}>Suscripción</div>
             <StatusBadge type={user.status}/>
             <div style={{ marginTop:12, fontSize:20, fontWeight:900, color:planColor }}>Plan {user.plan}</div>
-            {user.renewal&&user.status==="active"&&<div style={{ marginTop:10, fontSize:11, color:C.muted, background:C.bg, borderRadius:8, padding:"7px 10px", lineHeight:1.5 }}>Renovación:<br/><strong style={{color:C.text}}>USD ${user.renewal.toFixed(2)}/mes</strong></div>}
+            {user.renewal&&user.status==="active"&&<div style={{ marginTop:10, fontSize:11, color:C.muted, background:C.bg, borderRadius:8, padding:"7px 10px", lineHeight:1.5 }}>Renovación:<br/><strong style={{color:C.text}}>{user.country || "USD"} ${Number(user.renewal).toFixed(2)}/mes</strong></div>}
           </div>
           <div style={{ background:C.white, border:"1px solid "+(user.op==="done"?C.greenBorder:user.op==="progress"?C.yellowBorder:C.border), borderRadius:16, padding:"20px 18px", boxShadow:C.shadow }}>
             <div style={{ fontSize:10, color:C.muted, fontWeight:700, letterSpacing:"0.8px", textTransform:"uppercase", marginBottom:10 }}>Optimización</div>
@@ -271,7 +347,7 @@ function UserDashboard({ user }) {
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
             <div style={{ background:C.bg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.border }}>
               <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>VALOR PLAN</div>
-              <div style={{ fontSize:16, fontWeight:900, color:C.primary }}>USD ${user.renewal ? user.renewal.toFixed(2) : "0.00"}</div>
+              <div style={{ fontSize:16, fontWeight:900, color:C.primary }}>{user.country || "USD"} ${user.renewal ? Number(user.renewal).toFixed(2) : "0.00"}</div>
             </div>
             <div style={{ background:C.bg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.border }}>
               <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>PAÍS / MONEDA</div>
@@ -301,13 +377,13 @@ function UserDashboard({ user }) {
               {user.precio_base && (
                 <div style={{ background:C.bg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.border }}>
                   <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>PRECIO BASE</div>
-                  <div style={{ fontSize:16, fontWeight:900, color:C.green }}>USD ${parseFloat(user.precio_base).toFixed(2)}</div>
+                <div style={{ fontSize:16, fontWeight:900, color:C.green }}>{user.country || "USD"} ${parseFloat(user.precio_base).toFixed(2)}</div>
                 </div>
               )}
               {user.precio_base_fds && (
                 <div style={{ background:C.bg, borderRadius:10, padding:"12px 14px", border:"1px solid "+C.border }}>
                   <div style={{ fontSize:9, color:C.muted, marginBottom:3, fontWeight:600 }}>PRECIO FDS</div>
-                  <div style={{ fontSize:16, fontWeight:900, color:C.gold }}>USD ${parseFloat(user.precio_base_fds).toFixed(2)}</div>
+                  <div style={{ fontSize:16, fontWeight:900, color:C.gold }}>{user.country || "USD"} ${parseFloat(user.precio_base_fds).toFixed(2)}</div>
                 </div>
               )}
             </div>
@@ -335,6 +411,11 @@ function UserDashboard({ user }) {
 
         {/* ACCIONES */}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 }} className="ud-g2">
+          {user.airbnb_link && (
+            <a href={user.airbnb_link} target="_blank" rel="noreferrer" style={{ background:C.white, color:C.primary, border:"1px solid "+C.primary+"40", borderRadius:12, padding:"14px 18px", fontWeight:700, fontSize:13, cursor:"pointer", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", gap:8, boxShadow:C.shadow }}>
+              Ver anuncio Airbnb
+            </a>
+          )}
           {user.meetEnabled && (
             <a href={CALENDAR_URL_SINGLE} target="_blank" rel="noreferrer" style={{ background:"linear-gradient(135deg,#3B82F6,#2563EB)", color:"#fff", border:"none", borderRadius:12, padding:"14px 18px", fontWeight:700, fontSize:13, cursor:"pointer", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", gap:8, boxShadow:"0 4px 12px #3B82F640" }}>
               📅 Agendar meet
@@ -383,16 +464,23 @@ function UserDashboard({ user }) {
 
 // ── ADMIN DASHBOARD ───────────────────────────────────────────────────────────
 function AdminDashboard() {
-  const { users, setSession, loadUsers } = useApp();
+  const { users, setSession, loadUsers, lastRefresh } = useApp();
   const nav = useNavigate();
   const [showModal, setShowModal] = useState(false);
   const [editWpp, setEditWpp] = useState(null);
-  const [form, setForm] = useState({ wpp:"", pass:"", nombre:"", correo:"", ciudad:"", plan:"Pro", status:"active", op:"pending", start_date:"", end_date:"", plan_value:"", airbnb_link:"", country:"USD", meet_enabled:true, precio_base:"", precio_base_fds:"", estrategia:"", estado_precios:"CRITICO" });
+  const [form, setForm] = useState(DEFAULT_FORM);
   const [err, setErr] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
   const all = Object.entries(users);
   const active = all.filter(([,u]) => u.status === "active").length;
   const mrr = all.filter(([,u]) => u.status === "active").reduce((s,[,u]) => s+(u.plan==="Pro"?49.99/3:u.plan==="Anual"?149/12:14.99), 0);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadUsers();
+    setRefreshing(false);
+  };
 
   const handleSave = async () => {
     if (!form.wpp || !form.pass || !form.nombre || !form.correo) {
@@ -405,51 +493,37 @@ function AdminDashboard() {
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 90);
     const endStr = endDate.toISOString().split('T')[0];
+    const planValue = parseFloat(form.plan_value) || 0;
+    const userPayload = {
+      pass: form.pass.trim(),
+      name: form.nombre.trim(),
+      correo: form.correo.trim(),
+      city: form.ciudad.trim(),
+      plan: form.plan,
+      status: form.status,
+      op: form.op || "pending",
+      start_date: form.start_date || today,
+      end_date: form.end_date || endStr,
+      renewal: planValue,
+      plan_value: planValue,
+      airbnb_link: form.airbnb_link.trim(),
+      country: form.country || "USD",
+      meet_enabled: !!form.meet_enabled,
+      precio_base: form.precio_base === "" ? null : parseFloat(form.precio_base),
+      precio_base_fds: form.precio_base_fds === "" ? null : parseFloat(form.precio_base_fds),
+      estrategia: form.estrategia.trim(),
+      estado_precios: form.estado_precios || "CRITICO",
+    };
 
     try {
       if (editWpp) {
-        const { error } = await supabase.from("users").update({
-          pass: form.pass,
-          name: form.nombre,
-          correo: form.correo,
-          city: form.ciudad,
-          plan: form.plan,
-          status: form.status,
-          op: form.op,
-          start_date: form.start_date,
-          end_date: form.end_date,
-          plan_value: parseFloat(form.plan_value) || 0,
-          airbnb_link: form.airbnb_link,
-          country: form.country,
-          meet_enabled: form.meet_enabled,
-          precio_base: parseFloat(form.precio_base) || 0,
-          precio_base_fds: parseFloat(form.precio_base_fds) || 0,
-          estrategia: form.estrategia,
-          estado_precios: form.estado_precios,
-        }).eq("wpp", editWpp);
+        const { error } = await supabase.from("users").update(userPayload).eq("wpp", editWpp);
         if (error) throw error;
         alert("✅ Usuario actualizado correctamente");
       } else {
         const { error } = await supabase.from("users").insert({
-          wpp: form.wpp,
-          pass: form.pass,
-          name: form.nombre,
-          correo: form.correo,
-          city: form.ciudad,
-          plan: form.plan,
-          status: form.status,
-          op: form.op || "pending",
-          start_date: form.start_date || today,
-          end_date: form.end_date || endStr,
-          renewal: parseFloat(form.plan_value) || 14.99,
-          meet_enabled: form.meet_enabled,
-          plan_value: parseFloat(form.plan_value) || 0,
-          airbnb_link: form.airbnb_link,
-          country: form.country,
-          precio_base: parseFloat(form.precio_base) || 0,
-          precio_base_fds: parseFloat(form.precio_base_fds) || 0,
-          estrategia: form.estrategia,
-          estado_precios: form.estado_precios,
+          wpp: form.wpp.trim(),
+          ...userPayload,
         });
         if (error) throw error;
         alert("✅ Usuario creado correctamente");
@@ -457,7 +531,7 @@ function AdminDashboard() {
 
       setShowModal(false);
       setEditWpp(null);
-      setForm({ wpp:"", pass:"", nombre:"", correo:"", ciudad:"", plan:"Pro", status:"active", op:"pending", start_date:"", end_date:"", plan_value:"", airbnb_link:"", country:"USD", meet_enabled:true, precio_base:"", precio_base_fds:"", estrategia:"", estado_precios:"CRITICO" });
+      setForm(DEFAULT_FORM);
       await loadUsers();
     } catch (err) {
       setErr("Error guardando usuario: " + err.message);
@@ -477,10 +551,10 @@ function AdminDashboard() {
       op: user.op || "pending",
       start_date: user.start || "",
       end_date: user.end || "",
-      plan_value: user.renewal || "",
+      plan_value: user.renewal ?? "",
       airbnb_link: user.airbnb_link || "",
       country: user.country || "USD",
-      meet_enabled: user.meetEnabled,
+      meet_enabled: user.meetEnabled !== false,
       precio_base: user.precio_base || "",
       precio_base_fds: user.precio_base_fds || "",
       estrategia: user.estrategia || "",
@@ -493,8 +567,10 @@ function AdminDashboard() {
   const handleDelete = async (wpp) => {
     if (window.confirm(`¿Eliminar a ${users[wpp].name}?`)) {
       try {
-        const { error } = await supabase.from("users").delete().eq("wpp", wpp);
+        await supabase.from("user_logs").delete().eq("wpp", wpp);
+        const { data, error } = await supabase.from("users").delete().eq("wpp", wpp).select();
         if (error) throw error;
+        if (!data || data.length === 0) throw new Error("Supabase no elimino el registro. Revisa permisos RLS de DELETE para la tabla users.");
         alert("Usuario eliminado correctamente");
         await loadUsers();
       } catch (err) {
@@ -505,7 +581,7 @@ function AdminDashboard() {
 
   const handleNew = () => {
     setEditWpp(null);
-    setForm({ wpp:"", pass:"", nombre:"", correo:"", ciudad:"", plan:"Pro", status:"active" });
+    setForm(DEFAULT_FORM);
     setShowModal(true);
     setErr("");
   };
@@ -519,12 +595,16 @@ function AdminDashboard() {
           <Logo size={26}/>
           <div style={{ background:C.yellowBg, border:"1px solid "+C.yellowBorder, borderRadius:100, padding:"3px 10px", fontSize:10, color:C.gold, fontWeight:700, letterSpacing:"0.8px" }}>ADMIN</div>
         </div>
-        <button onClick={() => {setSession(null); nav("/login");}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:8, padding:"6px 12px", color:C.muted, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>Salir</button>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <button onClick={handleRefresh} disabled={refreshing} style={{ background:C.primaryGlow, border:"1px solid "+C.primary+"40", borderRadius:8, padding:"6px 12px", color:C.primary, fontSize:12, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>{refreshing ? "Actualizando..." : "Refrescar"}</button>
+          <button onClick={() => {setSession(null); nav("/login");}} style={{ background:"transparent", border:"1px solid "+C.border, borderRadius:8, padding:"6px 12px", color:C.muted, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>Salir</button>
+        </div>
       </nav>
       
       <div style={{ maxWidth:860, margin:"0 auto", padding:"28px 20px" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
-          {[{l:"Clientes activos",v:active,c:C.green,bg:C.greenBg,br:C.greenBorder},{l:"MRR estimado",v:"$"+mrr.toFixed(0),c:C.primary,bg:C.primaryGlow,br:C.primary+"30"},{l:"Total clientes",v:all.length,c:C.gold,bg:C.yellowBg,br:C.yellowBorder}].map(s=>(
+        {lastRefresh && <div style={{ color:C.muted, fontSize:11, marginBottom:10 }}>Datos actualizados a las {lastRefresh.toLocaleTimeString("es", { hour:"2-digit", minute:"2-digit" })}</div>}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:24 }} className="admin-stats">
+          {[{l:"Clientes activos",v:active,c:C.green,bg:C.greenBg,br:C.greenBorder},{l:"MRR estimado",v:"$"+mrr.toFixed(0),c:C.primary,bg:C.primaryGlow,br:C.primary+"30"},{l:"Total clientes",v:all.length,c:C.gold,bg:C.yellowBg,br:C.yellowBorder},{l:"Reset meet",v:daysToNextMeetReset()+" dias",c:C.yellow,bg:C.yellowBg,br:C.yellowBorder}].map(s=>(
             <div key={s.l} style={{ background:s.bg, border:"1px solid "+s.br, borderRadius:14, padding:"18px 16px", textAlign:"center", boxShadow:C.shadow }}>
               <div style={{ fontSize:26, fontWeight:900, color:s.c, marginBottom:4 }}>{s.v}</div>
               <div style={{ fontSize:11, color:C.muted }}>{s.l}</div>
@@ -629,37 +709,32 @@ function AdminDashboard() {
               <div>
                 <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>PAÍS / MONEDA</label>
                 <select value={form.country} onChange={e => setForm(p => ({...p, country:e.target.value}))} style={inp}>
-                  <option value="USD">USD (Dólares)</option>
-                  <option value="GTQ">GTQ (Quetzal)</option>
-                  <option value="MXN">MXN (Pesos Mexicanos)</option>
-                  <option value="COP">COP (Pesos Colombianos)</option>
-                  <option value="BRL">BRL (Real Brasileño)</option>
-                  <option value="ARS">ARS (Pesos Argentinos)</option>
-                  <option value="CLP">CLP (Pesos Chilenos)</option>
+                  {MONEY_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>
-              <div>
-                <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>PRECIO BASE (USD)</label>
-                <input type="number" placeholder="49.99" value={form.precio_base} onChange={e => setForm(p => ({...p, precio_base:e.target.value}))} style={inp}/>
-              </div>
-              <div>
-                <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>PRECIO BASE FINES DE SEMANA (USD)</label>
-                <input type="number" placeholder="74.99" value={form.precio_base_fds} onChange={e => setForm(p => ({...p, precio_base_fds:e.target.value}))} style={inp}/>
-              </div>
-              <div>
-                <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>ESTRATEGIA</label>
-                <input type="text" placeholder="ej: Incrementar ocupación en temporada baja" value={form.estrategia} onChange={e => setForm(p => ({...p, estrategia:e.target.value}))} style={inp}/>
-              </div>
-              <div>
-                <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>ESTADO DE PRECIOS</label>
-                <select value={form.estado_precios} onChange={e => setForm(p => ({...p, estado_precios:e.target.value}))} style={inp}>
-                  <option value="CRITICO">🔴 CRÍTICO</option>
-                  <option value="ESTABLE">🟡 ESTABLE</option>
-                  <option value="MEJORAR FOTOS">📸 MEJORAR FOTOS</option>
-                  <option value="IDEAL">🟢 IDEAL</option>
-                  <option value="ACTIVACION">⚡ ACTIVACIÓN</option>
-                  <option value="PERSONALIZADO">⚙️ PERSONALIZADO</option>
-                </select>
+
+              <div style={{ border:"1px solid "+C.border, borderRadius:12, padding:14, background:C.bg }}>
+                <div style={{ fontSize:12, color:C.text, fontWeight:900, marginBottom:12 }}>Precios</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                  <div>
+                    <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>PRECIO BASE</label>
+                    <input type="number" placeholder="49.99" value={form.precio_base} onChange={e => setForm(p => ({...p, precio_base:e.target.value}))} style={inp}/>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>PRECIO BASE FDS</label>
+                    <input type="number" placeholder="74.99" value={form.precio_base_fds} onChange={e => setForm(p => ({...p, precio_base_fds:e.target.value}))} style={inp}/>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>ESTRATEGIA</label>
+                    <input type="text" placeholder="ej: Incrementar ocupación en temporada baja" value={form.estrategia} onChange={e => setForm(p => ({...p, estrategia:e.target.value}))} style={inp}/>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, color:C.muted, display:"block", marginBottom:5, fontWeight:700 }}>ESTADO ACTUAL</label>
+                    <select value={form.estado_precios} onChange={e => setForm(p => ({...p, estado_precios:e.target.value}))} style={inp}>
+                      {PRICE_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </div>
+                </div>
               </div>
               <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px", background:form.meet_enabled?C.primaryGlow:C.bg, borderRadius:8, border:"1px solid "+(form.meet_enabled?C.primary+"40":C.border), cursor:"pointer" }} onClick={() => setForm(p => ({...p, meet_enabled:!p.meet_enabled}))}>
                 <div style={{ width:20, height:20, borderRadius:4, background:form.meet_enabled?C.primary:C.border, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -679,6 +754,7 @@ function AdminDashboard() {
           </div>
         </div>
       )}
+      <style>{`@media(max-width:700px){.admin-stats{grid-template-columns:1fr 1fr!important}}@media(max-width:430px){.admin-stats{grid-template-columns:1fr!important}}`}</style>
     </div>
   );
 }
