@@ -20,7 +20,7 @@ const C = {
   shadowLg: "0 10px 15px rgba(0,0,0,0.08), 0 4px 6px rgba(0,0,0,0.05)",
 };
 
-const CALENDAR_URL_SINGLE = "https://api.leadconnectorhq.com/widget/booking/ruC0Fk3XO720hOxkMiYz";
+const CALENDAR_URL_SINGLE = "https://api.leadconnectorhq.com/widget/booking/a0uA1NGhdNKwmf26zzXL";
 
 const ADMIN = { wpp: "+88888888", pass: "8888" };
 
